@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+    <title>Physics 1</title>
+
+	<script src="../babylon.max.js"></script>
+	<script src="../ammo.js"></script>
+	
+    <style>
+        html, body {
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+    <script>
+if (BABYLON.Engine.isSupported()) {
+    var canvas = document.getElementById("renderCanvas");
+    var engine = new BABYLON.Engine(canvas, true);
+
+
+
+var createScene = function() {
+    var scene = new BABYLON.Scene(engine);
+  
+    // camera
+    var camera = new BABYLON.ArcRotateCamera("camera1",  -Math.PI/2, 3 * Math.PI/ 8, 40, new BABYLON.Vector3(0, 0, 0), scene);
+    camera.attachControl(canvas, true);
+    // lights
+    var light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(1, 0.5, 0), scene);
+    light.intensity = 0.8;
+	
+	Ammo().then(function(Ammo) {
+	
+		/*Initiate Physics World */
+		var collisionConfiguration = new Ammo.btDefaultCollisionConfiguration();
+		var dispatcher = new Ammo.btCollisionDispatcher(collisionConfiguration);
+		var overlappingPairCache = new Ammo.btDbvtBroadphase();
+		var solver = new Ammo.btSequentialImpulseConstraintSolver();
+		var dynamicsWorld = new Ammo.btDiscreteDynamicsWorld(dispatcher, overlappingPairCache, solver, collisionConfiguration);
+		dynamicsWorld.setGravity(new Ammo.btVector3(0, -9.8, 0));
+		
+		/* Parameters for arranging boxes with a cube volume */
+		var cubeSide = 6;  //keep even
+		var boxSide = 1;
+		var margin = 0.25; // Leave gaps around each box when placing
+		boxesNb = Math.pow(cubeSide, 3); // number of boxes to be created
+		
+		var boxes = []; //array for rendered boxes
+		
+		/* Create master box */
+		var box = new BABYLON.MeshBuilder.CreateBox("box", {size: boxSide}, scene);
+		box.material = new BABYLON.StandardMaterial("mat", scene);
+		box.material.diffuseColor = new BABYLON.Color3(Math.random(), Math.random(), Math.random());
+		boxes.push(box);
+		
+		/* Create remaining boxes */
+		for(var i = 1; i < boxesNb; i++) {
+			box = new BABYLON.MeshBuilder.CreateBox("box", {size: boxSide}, scene);
+			box.material = new BABYLON.StandardMaterial("mat", scene);
+			box.material.diffuseColor = new BABYLON.Color3(Math.random(), Math.random(), Math.random());
+			boxes.push(box)
+		}
+		
+		/* Create and Position Ground */
+		var ground = new BABYLON.MeshBuilder.CreateGround("ground", {width: cubeSide * 5, height: cubeSide * 5}, scene);
+		ground.position.y = -6;
+		
+		var bodies = []; //array for all physics imposters for boxes and ground
+		
+		/* Creation of Physics Imposters. NOTE in Ammo sizes for shape are from center to edge so need to be half BJS sizes */
+		
+		var groundShape = new Ammo.btBoxShape(new Ammo.btVector3(cubeSide * 2.5, 1, cubeSide * 2.5)); //as yet do not know range of possible imposter shapes
+
+		var groundTransform = new Ammo.btTransform(); // need to set a new transformation in order to move, rotate or scale an Ammo shape
+		groundTransform.setIdentity(); // set transformation to identity then can reset as needed
+		groundTransform.setOrigin(new Ammo.btVector3(0, -7, 0)); // To get top of groundShape to same position as ground need -1 to place top on XZ plane then -6
+		
+		/* Set Physics properties of ground */
+		var groundMass = 0;
+		var groundLocalInertia = new Ammo.btVector3(0, 0, 0);
+		var groundMotionState = new Ammo.btDefaultMotionState(groundTransform);
+		var groundRBInfo = new Ammo.btRigidBodyConstructionInfo(groundMass, groundMotionState, groundShape, groundLocalInertia);
+		var imposter = new Ammo.btRigidBody(groundRBInfo);
+
+		/* Add ground to world */
+		dynamicsWorld.addRigidBody(imposter);
+		bodies.push(imposter);
+
+		/* Create master imposter for a box */
+		var boxShape = new Ammo.btBoxShape(new Ammo.btVector3(0.5, 0.5, 0.5)); // Again half side for BJS box
+		
+		/* Set imposter for all boxes and add to world */
+		for(var i = 0; i < boxesNb; i++) {
+			var startTransform = new Ammo.btTransform();
+			startTransform.setIdentity();	  
+			var mass = 1;
+			var localInertia = new Ammo.btVector3(0, 0, 0);
+			boxShape.calculateLocalInertia(mass, localInertia);
+
+			var boxMotionState = new Ammo.btDefaultMotionState(startTransform);
+			var boxRBInfo = new Ammo.btRigidBodyConstructionInfo(mass, boxMotionState, boxShape, localInertia);
+			var boxImposter = new Ammo.btRigidBody(boxRBInfo);
+
+			dynamicsWorld.addRigidBody(boxImposter);
+			bodies.push(boxImposter);
+		}
+		
+		/* reset called on start and then after some boxes remain without moving for a continuous fall effect. */
+		var resetPositions = function () {
+			var boxPlace = boxSide + margin;
+			var i = 0; // start at 1 as ground is bodies[0]
+			for (var p = 0; p < cubeSide; p++) { //p is which pile box is in above ground, y
+				for (var r = 0; r < cubeSide; r++) { // r is row the box is in, front to back, z
+					for (var c = 0; c < cubeSide; c++) {// c is column the box is in, left to right, x
+						if (i == bodies.length) break;
+						var body = bodies[i + 1];
+						var origin = body.getWorldTransform().getOrigin();
+						origin.setX(Math.random() * 0.5 + boxPlace * c - cubeSide * boxPlace / 2);
+						origin.setY(Math.random() * 0.5 + 1.5 * boxPlace + boxPlace * p);
+						origin.setZ(Math.random() * 0.5 + boxPlace * r - cubeSide * boxPlace / 2);
+						body.activate();
+						var rotation = body.getWorldTransform().getRotation();
+						rotation.setX(1);
+						rotation.setY(0);
+						rotation.setZ(0);
+						rotation.setW(1);
+						var renderObject = boxes[i++];
+						renderObject.position.x = origin.x();
+						renderObject.position.y = origin.y();
+						renderObject.position.z = origin.z();
+						var quaternion = new BABYLON.Quaternion(0, 0, 0, 0).copyFromFloats(rotation.x(), rotation.y(), rotation.z(), rotation.w())
+						renderObject.rotation = quaternion.toEulerAngles();
+					}
+				}
+			}
+		}
+		
+		/* restart timer */
+		var nextTimeToRestart = 0;
+		
+		var timeToRestart = function() { // restart if at least one is inactive - the scene is starting to get boring
+			if (nextTimeToRestart) {
+				if (Date.now() >= nextTimeToRestart) {
+					nextTimeToRestart = 0;
+					return true;
+				}
+				return false;
+			}
+			for (var i = 1; i <= boxesNb; i++) {
+				var body = bodies[i];
+				if (!body.isActive()) {
+					nextTimeToRestart = Date.now() + 1000; // add another second after first is inactive
+					break;
+				}
+			}
+			return false;
+		}
+		
+		resetPositions();
+		
+		var transform = new Ammo.btTransform(); // transform variable
+		
+		/* run imposter simulation per frame 
+		transferring imposter positions and orientation to boxes*/
+		scene.registerAfterRender(function(){
+			dynamicsWorld.stepSimulation(engine.getDeltaTime(), 2);
+		
+			for(var i = 0; i < boxesNb; i++) {
+				var body = bodies[i + 1]; // + 1 as bodies[0] is groundShape;
+				body.getMotionState().getWorldTransform(transform);
+				var origin = transform.getOrigin();
+				var rotation = transform.getRotation();
+				var renderObject = boxes[i];
+				renderObject.position.x = origin.x();
+				renderObject.position.y = origin.y();
+				renderObject.position.z = origin.z();
+				var quaternion = new BABYLON.Quaternion(0, 0, 0, 0).copyFromFloats(rotation.x(), rotation.y(), rotation.z(), rotation.w())
+				renderObject.rotation = quaternion.toEulerAngles();
+			}
+			
+			if (timeToRestart()) {
+				resetPositions();
+			} 
+			
+		})
+		
+	})
+	
+	
+    return scene;
+  };
+
+
+var scene = createScene();
+
+engine.runRenderLoop(function () {
+  scene.render();
+
+});
+
+window.addEventListener("resize", function () {
+    engine.resize();
+});
+        }
+    </script>
+</body>
+</html>
