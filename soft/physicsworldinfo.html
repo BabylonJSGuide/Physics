@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+    <title>Softball 1</title>
+
+	<script src="../babylon.max.js"></script>
+	<script src="../ammo.js"></script>
+	<script src="../AmmoExtension.js"></script>
+	
+    <style>
+        html, body {
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+    <script>
+if (BABYLON.Engine.isSupported()) {
+    var canvas = document.getElementById("renderCanvas");
+    var engine = new BABYLON.Engine(canvas, true);
+
+
+
+var createScene = function() {
+    var scene = new BABYLON.Scene(engine);
+  
+    // camera
+    var camera = new BABYLON.ArcRotateCamera("camera1",  -Math.PI/2, 3 * Math.PI/ 8, 40, new BABYLON.Vector3(0, 0, 0), scene);
+    camera.attachControl(canvas, true);
+    // lights
+    var light1 = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0, 0.5, 0), scene);
+	var light = new BABYLON.DirectionalLight("dir01", new BABYLON.Vector3(-0.5, -0.5, 0), scene);
+    light1.intensity = 0.2;
+	
+	var BJSAMMO = new Ammo();
+	
+
+            // - Global variables -
+
+			// Graphics variables
+            var container, stats;
+            var camera, controls, scene, renderer;
+            var textureLoader;
+
+            // Physics variables
+            var gravityConstant = -9.8;
+			var collisionConfiguration;
+			var dispatcher;
+			var broadphase;
+			var solver;
+			var physicsWorld;
+			var rigidBodies = [];
+			var softBodies = [];
+			var margin = 0.05;
+			var hinge;
+			var transformAux1 = new BJSAMMO.btTransform();
+			var softBodyHelpers = new BJSAMMO.btSoftBodyHelpers();
+
+			var armMovement = 0;
+			
+			var sphereDiam = 7;
+			var boxWidth = sphereDiam * 0.5;
+			var boxHeight = sphereDiam * 0.5;
+			var boxDepth = 10;
+			var incline = Math.PI/6;
+			
+			var boxX = -boxWidth * Math.cos(incline) * 0.5 - 3 * boxWidth;
+			var boxY = boxHeight * Math.sin(incline) * 0.5 + 2 * boxHeight;
+			var ground, ramp;
+			
+			var mat =new BABYLON.StandardMaterial("", scene);
+			mat.emissiveColor = new BABYLON.Color3(0, 0, 0);
+
+            init();
+
+
+            // - Functions -
+
+            function init() {
+
+				initPhysics();
+
+				createObjects();
+
+            }
+
+
+			function initPhysics() {
+
+				// Physics configuration
+
+				collisionConfiguration = new BJSAMMO.btSoftBodyRigidBodyCollisionConfiguration();
+				dispatcher = new BJSAMMO.btCollisionDispatcher( collisionConfiguration );
+				broadphase = new BJSAMMO.btDbvtBroadphase();
+				solver = new BJSAMMO.btSequentialImpulseConstraintSolver();
+				softBodySolver = new BJSAMMO.btDefaultSoftBodySolver();
+				physicsWorld = new BJSAMMO.btSoftRigidDynamicsWorld( dispatcher, broadphase, solver, collisionConfiguration, softBodySolver);
+				physicsWorld.setGravity( new BJSAMMO.btVector3( 0, gravityConstant, 0 ) );
+				physicsWorld.getWorldInfo().set_m_gravity( new BJSAMMO.btVector3( 0, gravityConstant, 0 ) );
+				console.log(physicsWorld.getWorldInfo())
+            }
+		
+
+            function createObjects() {
+				//materials
+				var cover = new BABYLON.StandardMaterial("cover", scene);
+				cover.diffuseTexture = new BABYLON.Texture("colors.png");
+
+				// Ground
+				var ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 80, height: 80}, scene);
+				var groundShape = new BJSAMMO.btBoxShape(new BJSAMMO.btVector3(40, 1, 40));
+				ground.rotationQuaternion = new BABYLON.Quaternion.RotationYawPitchRoll(0, 0, 0)
+				var groundImposter = createRigidBody(groundShape, 0, new BABYLON.Vector3(0, -1, 0), ground.rotationQuaternion);
+				ground.isPickable = true;
+				//shadows to add
+				
+				// Ramp
+				
+				var rampWidth = 18;
+				var rampHeight = 1;
+				var rampDepth = 8;
+                var ramp = BABYLON.MeshBuilder.CreateBox("ramp", {width: rampWidth, height: rampHeight, depth: rampDepth}, scene);
+				var rampShape = new BJSAMMO.btBoxShape(new BJSAMMO.btVector3(rampWidth/2, rampHeight/2, rampDepth/2));
+				ramp.position.y = rampWidth * Math.sin(incline) * 0.5 * 0.75;
+				ramp.rotationQuaternion = new BABYLON.Quaternion.RotationYawPitchRoll(0, 0, incline)
+				var rampImposter = createRigidBody(rampShape, 0, ramp.position, ramp.rotationQuaternion);
+				
+				//shadows to add
+				
+				
+				var sphere = BABYLON.MeshBuilder.CreateSphere("sphere", {diameter: sphereDiam, updatable:true}, scene);
+				sphere.material = cover;
+				sphere.minimizeVertices();
+				sphereAtX = (rampWidth * Math.cos(incline) - (sphereDiam + 0.2)) * 0.5;
+				sphereAtY = (rampWidth * Math.sin(incline) + (2 * sphereDiam)) * 0.5;
+				sphereAtZ = 0;
+				createSoftVolume( sphere, sphereAtX, sphereAtY, sphereAtZ, 15, 600 ); 
+				//shadows to add
+				
+			
+				
+				var options = {
+					width: 2,
+					height: 2,
+					depth: 10,
+					lineDensity: 6,
+					updatable: true
+				};
+	
+				
+                var box = CreateSoftBox("sb", options, scene);
+				
+				box.material = cover;
+				box.minimizeVertices();
+				boxAtX = -boxWidth * Math.cos(incline) * 0.5 - 2.5 * boxWidth;
+				boxAtY = boxHeight * Math.sin(incline) * 0.5 + 2 * boxHeight;
+				boxAtZ = 0;
+				createSoftVolume( box, boxAtX, boxAtY, boxAtZ, 15, 360 ); 
+				//shadows to add 
+							
+            }
+			
+
+            function createSoftVolume( mesh, x, y, z, mass, pressure ) {
+
+                var positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+				
+				var numVerts = positions.length/3;
+				for (var i = 0; i < positions.length; i += 3) {
+					positions[i] += x;
+					positions[i + 1] += y;
+					positions[i + 2] += z;
+				}
+			mesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+			
+			
+				var indices = mesh.getIndices();
+				
+				var ammopositions = [];
+				for (var i = 0; i < positions.length; i += 3) {
+					ammopositions[i] = positions[i];
+					ammopositions[i + 1] = positions[i + 1];
+					ammopositions[i + 2] = -1 * positions[i + 2];					
+				}
+			
+                var volumeSoftBody = softBodyHelpers.CreateFromTriMesh(
+                    physicsWorld.getWorldInfo(),
+                    ammopositions,
+                    indices,
+                    indices.length / 3,
+                    true );
+
+                var sbConfig = volumeSoftBody.get_m_cfg();
+                sbConfig.set_viterations( 40 );
+                sbConfig.set_piterations( 40 );
+
+                // Soft-soft and soft-rigid collisions
+                sbConfig.set_collisions( 0x11 );
+
+                // Friction
+                sbConfig.set_kDF( 0.1 );
+                // Damping
+                sbConfig.set_kDP( 0.01 );
+                // Pressure
+                sbConfig.set_kPR( pressure );
+                // Stiffness
+                volumeSoftBody.get_m_materials().at( 0 ).set_m_kLST( 0.9 );
+                volumeSoftBody.get_m_materials().at( 0 ).set_m_kAST( 0.9 );
+
+                volumeSoftBody.setTotalMass( mass, false )
+                BJSAMMO.castObject( volumeSoftBody, BJSAMMO.btCollisionObject ).getCollisionShape().setMargin( margin );
+                physicsWorld.addSoftBody( volumeSoftBody, 1, -1 );
+                mesh.imposter = volumeSoftBody;
+                // Disable deactivation
+                volumeSoftBody.setActivationState( 4 );
+				
+                softBodies.push( mesh ); 
+
+            }
+
+
+            function createRigidBody(physicsShape, mass, pos, quat) {
+				var transform = new BJSAMMO.btTransform();
+    			transform.setIdentity();
+    			transform.setOrigin( new BJSAMMO.btVector3( pos.x, pos.y, pos.z ) );
+    			transform.setRotation( new BJSAMMO.btQuaternion( quat.x, quat.y, quat.z, quat.w ) );
+				var motionState = new BJSAMMO.btDefaultMotionState( transform );
+
+				var localInertia = new BJSAMMO.btVector3( 0, 0, 0 );
+		    	physicsShape.calculateLocalInertia( mass, localInertia );
+
+		    	var rbInfo = new BJSAMMO.btRigidBodyConstructionInfo( mass, motionState, physicsShape, localInertia );
+		    	var body = new BJSAMMO.btRigidBody( rbInfo );
+
+				body.setActivationState( 4 );
+
+				physicsWorld.addRigidBody( body );
+
+                return body;
+            }
+
+            function processClick() {
+                var pickinfo = scene.pick(scene.pointerX, scene.pointerY, function (mesh) {return mesh.name == "ground"; });
+				if (pickinfo.hit) {
+					var c = camera.position.clone();
+					c.y = 15;
+					var direction = c.subtract(pickinfo.pickedPoint);
+					direction.normalize();
+					var startPoint = pickinfo.pickedPoint.add(direction.scale(50));
+                    // Creates a ball
+                    var ballMass = 3;
+                    var ballRadius = 0.8;
+                    var ball = BABYLON.MeshBuilder.CreateSphere("ball", {diameter: 2 * ballRadius}, scene);
+					ball.material = mat;
+					rigidBodies.push(ball);
+                    //ball.castShadow = true;
+                    //ball.receiveShadow = true;
+                    var ballShape = new BJSAMMO.btSphereShape( ballRadius );
+                    ballShape.setMargin( margin );
+					ball.position = new BABYLON.Vector3(startPoint.x, startPoint.y, startPoint.z);
+					ballPosition = new BABYLON.Vector3(startPoint.x, startPoint.y, -startPoint.z);
+					//ball.position = new BABYLON.Vector3(5, 10, 0);
+					ball.rotationQuaternion = new BABYLON.Quaternion.RotationYawPitchRoll(0, 0, 0)
+                    var ballBody = createRigidBody(ballShape, ballMass, ballPosition, ball.rotationQuaternion);;
+                    ballBody.setFriction( 0.5 );
+
+                    var fireDirection = new BABYLON.Vector3(-direction.x, -direction.y, direction.z).scale(50);
+					//var fireDirection = new BABYLON.Vector3(-10, 0, 0);
+                    ballBody.setLinearVelocity( new BJSAMMO.btVector3( fireDirection.x, fireDirection.y, fireDirection.z ) );
+					ball.imposter = ballBody;
+
+                }
+				
+				return null;
+
+            }
+
+			
+			function updatePhysics( deltaTime ) {
+
+                // Step world
+                physicsWorld.stepSimulation( deltaTime, 1 );
+
+                // Update soft volumes
+                for ( var i = 0, il = softBodies.length; i < il; i++ ) {
+                    var mesh = softBodies[ i ];
+					var positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);				
+                    var volumePositions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);				
+                    var volumeNormals = mesh.getVerticesData(BABYLON.VertexBuffer.NormalKind);
+                    var indices = mesh.getIndices();
+                    var numVerts = volumePositions.length / 3;
+                    var nodes = mesh.imposter.get_m_nodes();
+					
+                   for ( var j = 0; j < numVerts; j ++ ) {
+
+                        var node = nodes.at( j );
+                        var nodePos = node.get_m_x();
+						var x = nodePos.x();
+                        var y = nodePos.y();
+                        var z = -nodePos.z();
+                        var nodeNormal = node.get_m_n();
+                        var nx = nodeNormal.x();
+                        var ny = nodeNormal.y();
+                        var nz = -nodeNormal.z();
+
+                        volumePositions[ 3 * j] = x;
+                        volumeNormals[ 3 * j ] = nx;
+                        volumePositions[ 3 * j + 1 ] = y;
+                        volumeNormals[ 3 * j + 1  ] = ny;
+                        volumePositions[ 3 * j + 2 ] = z;
+                        volumeNormals[ 3 * j + 2 ] = nz;
+ 
+                    }
+                    mesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, volumePositions);
+					mesh.updateVerticesData(BABYLON.VertexBuffer.NormalKind, volumeNormals);
+                }
+
+			    // Update rigid bodies
+			    for ( var i = 0, il = rigidBodies.length; i < il; i++ ) {
+			    	var objBJS = rigidBodies[ i ];
+			    	var objPhys = objBJS.imposter;
+					var ms = objPhys.getMotionState();					
+					if ( ms ) {
+
+			        	ms.getWorldTransform( transformAux1 );
+						var p = transformAux1.getOrigin();
+						var q = transformAux1.getRotation();						
+						objBJS.position.x = p.x();
+						objBJS.position.y = p.y();
+						objBJS.position.z = -p.z();
+						var quaternion = new BABYLON.Quaternion(0, 0, 0, 0).copyFromFloats(q.x(), q.y(), q.z(), q.w())
+						objBJS.rotation = quaternion.toEulerAngles();
+			      	}
+			    }  
+
+			}
+			
+			
+
+			var direction = new BABYLON.Vector3.Zero();
+	
+			scene.onPointerObservable.add(function(){processClick()}, BABYLON.PointerEventTypes.POINTERUP);
+
+			scene.registerBeforeRender(function(){
+				updatePhysics( engine.getDeltaTime() )
+			})
+		
+    return scene;
+  }; 
+
+
+var scene = createScene();
+
+engine.runRenderLoop(function () {
+  scene.render();
+
+});
+
+window.addEventListener("resize", function () {
+    engine.resize();
+});
+        }
+    </script>
+</body>
+</html>
